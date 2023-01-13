@@ -88,3 +88,6 @@ coverage
 psycopg2-binary
 gunicorn
 daphne
+mongoengine
+pydantic
+pymongo

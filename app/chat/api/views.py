@@ -9,13 +9,22 @@ from rest_framework import generics, status, views, permissions, viewsets
 
 from chat.models import Chat, Contact
 from .serializers import *
+from chat.models import UniqueGenerator
 from asgiref.sync import async_to_sync
+from pymongo import MongoClient
 
 from channels.layers import get_channel_layer
 
 
 User = get_user_model()
 
+client = MongoClient(host="my-mongodb",
+                  port=27017,
+                  username='admin',
+                  password='admin'
+                 )
+dbname = client['test']
+ccolections = dbname['chats']
 
 class ChatViewSet(viewsets.ModelViewSet):
     queryset = ChatOneToOne.objects.all()
@@ -35,46 +44,50 @@ class ChatViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         serializer = ContactOneToOneSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        u = serializer.validated_data['friend']
-        channel_layer = get_channel_layer()
+        friend = serializer.validated_data['friend']
 
-        # u = CustomUser.objects.get(id=cs)
-        obj = ContactOneToOne.objects.filter((Q(owner=request.user) & Q(friend=u)) | (Q(owner=u) & Q(friend=request.user)) )
-        if obj.count() == 0:
-            contact = serializer.save(owner=self.request.user)
-            chat_ = ChatOneToOne.objects.create(participants=contact)
-            print('***unique_code=', chat_.id, chat_.unique_code)
-            user = request.user.id
+        channel_layer = get_channel_layer()
+        chat = ccolections.find_one({'sender': request.data['friend'], 'reciever': request.user.username, 'kind' : 0 }) 
+        if chat == None:
+            chat_unique_key = UniqueGenerator()
+
+            chat = ccolections.insert_one({
+                    'sender'    : request.user.username,
+                    'reciever'  : request.data['friend'],
+                    'kind'      : 0,
+                    'contacts'  : [],
+                    'sender_profile_image': "https://picsum.photos/200",
+                    'reciever_profile_image': "https://picsum.photos/200",
+                    'hide_user' : [],
+                    'unique_code' : chat_unique_key
+
+                })
             async_to_sync(channel_layer.group_send)(
                     f'notification_{request.user.id}',
                     {
                         'type': 'fetch_one_room',
-                        'chat_id': chat_.id
+                        'chat_id': str(chat.inserted_id)
                     }
                 )
             async_to_sync(channel_layer.group_send)(
-                f'notification_{u.id}',
+                f'notification_{friend}',
                 {
                     'type': 'fetch_one_room',
-                    'chat_id': chat_.id
+                    'chat_id': str(chat.inserted_id)
                 }
             )
-            return Response(data = {'chat_id': chat_.unique_code}, status=status.HTTP_201_CREATED)
-        print('fff', obj)
-        print('ff0...0', obj[0])
-        print('ff24', obj[0].chatOneToOne.all())
+            return Response(data = {'chat_id': chat_unique_key}, status=status.HTTP_201_CREATED)
+        # remove user from hide_user
+        ccolections.update_one({'_id': chat['_id']},  {'$pull' : {'hide_user':self.user.username}})
 
-        chat_ = obj[0].chatOneToOne.all()[0]
-        chat_.hide_user.remove(self.request.user)
-        chat_.save()
         async_to_sync(channel_layer.group_send)(
             f'notification_{request.user.id}',
                 {
                     'type': 'fetch_one_room',
-                    'chat_id': chat_.id
+                    'chat_id': chat['_id']
                 }
             )
-        return Response(data = {'chat_id': chat_.unique_code}, status=status.HTTP_200_OK)
+        return Response(data = {'chat_id': chat['unique_code']}, status=status.HTTP_200_OK)
 
 
 # update and partial update and add delete for owner and admin

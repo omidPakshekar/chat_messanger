@@ -1,5 +1,6 @@
 # # chat/consumers.py
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 from asgiref.sync import async_to_sync
 from channels.generic.websocket import WebsocketConsumer
 from channels.db import database_sync_to_async
@@ -14,12 +15,35 @@ from .models import *
 import base64
 from accounts.models import CustomUser
 
-from mongoengine import connect
+from pymongo import MongoClient
+from bson.json_util import dumps as bson_dump, loads as bson_loads
+import  mongoengine as mongo 
 
-connect(db='test', host="my-mongodb", port=27017)
+mongo.connect(db='test', host="my-mongodb", port=27017, username='admin', password='admin')
 
+# class Message(mongo.Document):
+#     senderId =  mongo.StringField(required=True)
+#     username =   mongo.StringField(required=True)
+#     content =  mongo.StringField(required=True)
+#     type = mongo.StringField(required=True)
+#     avatar =  mongo.ImageField()
+#     timestamp = mongo.StringField(required=True)
+#     date =  mongo.StringField(required=True)
+#     edited = mongo.BooleanField()
+#     replyMessage = mongo.ObjectIdField()
 
 User = get_user_model()
+client = MongoClient(host="my-mongodb",
+                  port=27017,
+                  username='admin',
+                  password='admin'
+                 )
+dbname = client['test']
+message_collection = dbname['messages']
+# chat_collection = dbname['chats']
+ccolections = dbname['chats']
+
+
 
 
 
@@ -130,34 +154,37 @@ class ChatConsumer2(AsyncConsumer):
     def messages_to_json(self, messages):
         result = []
         for message in messages:
-            if message.item._meta.model_name == 'image':
-                result.append({'_id': message.id,
-                    'senderId': str(message.sender.id),
-                    'username': message.sender.username,
-                    'type': 'image',
-                    'content': ImageCreateSerializer(instance=message.item).data['content'],
-                    'timestamp': str(message.timestamp),
-                    "date": str(message.date),
-                    'avatar' : "https://picsum.photos/200",
-                    "edited": message.edited,
-                    'replyMessage':  self.parent_message_to_json(message.parent_message)
-                    })
-            else:
-                m = message.timestamp.minute
-                h = message.timestamp.hour
-                result.append({'_id': message.id,
-                    'senderId': str(message.sender.id),
-                    'username': message.sender.username,
-                    'content': message.item.content,
-                    'timestamp': f'{f"0{h}" if h < 10 else f"{h}"}:{f"0{m}" if m < 10 else f"{m}"}',
-                    "date": str(message.date),
-                    'type' : 'text',
-                    'avatar' : "https://picsum.photos/200",
-                    "edited": message.edited,
-                    'replyMessage':  self.parent_message_to_json(message.parent_message)
-                })
+        	result.append(message)
+            # if message.item._meta.model_name == 'image':
+            #     result.append({'_id': message.id,
+            #         'senderId': str(message.sender.id),
+            #         'username': message.sender.username,
+            #         'type': 'image',
+            #         'content': ImageCreateSerializer(instance=message.item).data['content'],
+            #         'timestamp': str(message.timestamp),
+            #         "date": str(message.date),
+            #         'avatar' : "https://picsum.photos/200",
+            #         "edited": message.edited,
+            #         'replyMessage':  self.parent_message_to_json(message.parent_message)
+            #         })
+            # else:
+            # 	message_collection.insert_one( )
+
+            #     m = message.timestamp.minute
+            #     h = message.timestamp.hour
+            #     result.append({'_id': message.id,
+            #         'senderId': str(message.sender.id),
+            #         'username': message.sender.username,
+            #         'content': message.item.content,
+            #         'timestamp': f'{f"0{h}" if h < 10 else f"{h}"}:{f"0{m}" if m < 10 else f"{m}"}',
+            #         "date": str(message.date),
+            #         'type' : 'text',
+            #         'avatar' : "https://picsum.photos/200",
+            #         "edited": message.edited,
+            #         'replyMessage':  self.parent_message_to_json(message.parent_message)
+            #     })
         print(result)
-        return result
+        return message_collection.find()
 
     
 
@@ -223,7 +250,9 @@ class ChatConsumer2(AsyncConsumer):
     async def send_message(self, message):
         await self.send({
             'type' : 'websocket.send',
-            'text' :json.dumps(message)
+            # 'text' : message
+
+            'text' : bson_dump(message)
             })
 
     # async def chat_message(self, event):
@@ -265,6 +294,23 @@ class ChatConsumer2(AsyncConsumer):
             message_.recievers.add(self.participants.owner)
             message_.recievers.add(self.user)
             message_.save()
+            h = timezone.now().hour
+            m = timezone.now().minute
+
+            message_collection.insert_one({
+                'senderId': self.sender.id,
+                'username': self.sender.username,
+                'hide_user': [],
+                'recievers': [self.user.username, self.participants.friend.username, self.participants.owner.username],
+                'content': data['message'],
+                'timestamp': f'{f"0{h}" if h < 10 else f"{h}"}:{f"0{m}" if m < 10 else f"{m}"}',
+                "date": timezone.now(),
+                'type' : 'text',
+                'avatar' : "https://picsum.photos/200",
+                "edited": False,
+                'replyMessage': None
+                }
+            )
         # new 
         self.chat.messages.add(message_)
         for i in self.chat.hide_user.all():
@@ -276,6 +322,7 @@ class ChatConsumer2(AsyncConsumer):
                     }
             )
         self.chat.hide_user.clear()
+        
         return message_
     
     @sync_to_async
@@ -452,6 +499,7 @@ class ChatConsumer(AsyncConsumer):
             message_ = Message.objects.create(sender=self.sender, reciever=reciever_, item=text_, parent_message=parent)
 
         self.chat.messages.add(message_)
+
         return message_
     
     @sync_to_async
@@ -510,7 +558,8 @@ class RoomConsumer2(AsyncConsumer):
 
     @sync_to_async
     def get_one_chat(self, chat_id):
-        return ChatOneToOne.objects.get(id=int(chat_id))
+    	return ccolections.find_one({'_id' : chat_id})
+        # return ChatOneToOne.objects.get(id=int(chat_id))
 
     async def new_room(self, data):
         message_ = await self.create_new_room(data)

@@ -39,11 +39,11 @@ services:
   #   build: ./my-mongoclient
   #   image: fabianlee/my-mongoclient:3.9
   #   container_name: my-mongoclient
-  #   environment:
-  #     - MONGO_SERVER=my-mongodb
-  #     - MONGO_INITDB_DATABASE=test
-  #     - MONGO_INITDB_ROOT_USERNAME=admin
-  #     - MONGO_INITDB_ROOT_PASSWORD=admin
+    # environment:
+    #   - MONGO_SERVER=my-mongodb
+    #   - MONGO_INITDB_DATABASE=test
+    #   - MONGO_INITDB_ROOT_USERNAME=admin
+    #   - MONGO_INITDB_ROOT_PASSWORD=admin
   #   ports:
   #     - 27018:27018
   #   networks:
@@ -54,6 +54,11 @@ services:
       image: mongoclient/mongoclient:latest
       container_name: mongoclient
       hostname: mongoclient
+      environment:
+        - MONGO_SERVER=my-mongodb
+        - MONGO_INITDB_DATABASE=test
+        - MONGO_INITDB_ROOT_USERNAME=admin
+        - MONGO_INITDB_ROOT_PASSWORD=admin
       depends_on:
         - my-mongodb
       networks:
