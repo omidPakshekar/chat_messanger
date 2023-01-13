@@ -152,39 +152,7 @@ class ChatConsumer2(AsyncConsumer):
 
     @sync_to_async
     def messages_to_json(self, messages):
-        result = []
-        for message in messages:
-        	result.append(message)
-            # if message.item._meta.model_name == 'image':
-            #     result.append({'_id': message.id,
-            #         'senderId': str(message.sender.id),
-            #         'username': message.sender.username,
-            #         'type': 'image',
-            #         'content': ImageCreateSerializer(instance=message.item).data['content'],
-            #         'timestamp': str(message.timestamp),
-            #         "date": str(message.date),
-            #         'avatar' : "https://picsum.photos/200",
-            #         "edited": message.edited,
-            #         'replyMessage':  self.parent_message_to_json(message.parent_message)
-            #         })
-            # else:
-            # 	message_collection.insert_one( )
-
-            #     m = message.timestamp.minute
-            #     h = message.timestamp.hour
-            #     result.append({'_id': message.id,
-            #         'senderId': str(message.sender.id),
-            #         'username': message.sender.username,
-            #         'content': message.item.content,
-            #         'timestamp': f'{f"0{h}" if h < 10 else f"{h}"}:{f"0{m}" if m < 10 else f"{m}"}',
-            #         "date": str(message.date),
-            #         'type' : 'text',
-            #         'avatar' : "https://picsum.photos/200",
-            #         "edited": message.edited,
-            #         'replyMessage':  self.parent_message_to_json(message.parent_message)
-            #     })
-        print(result)
-        return message_collection.find()
+        return message_collection.find({'chat_unique_key' : self.chat_id})
 
     
 
@@ -250,8 +218,6 @@ class ChatConsumer2(AsyncConsumer):
     async def send_message(self, message):
         await self.send({
             'type' : 'websocket.send',
-            # 'text' : message
-
             'text' : bson_dump(message)
             })
 
@@ -300,6 +266,7 @@ class ChatConsumer2(AsyncConsumer):
             message_collection.insert_one({
                 'senderId': self.sender.id,
                 'username': self.sender.username,
+                'chat_unique_key' : self.chat_id,
                 'hide_user': [],
                 'recievers': [self.user.username, self.participants.friend.username, self.participants.owner.username],
                 'content': data['message'],
